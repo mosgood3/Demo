@@ -82,6 +82,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Missing metadata' }, { status: 400 })
       }
 
+      // Get period from subscription items (Stripe API v2022-11-15+)
+      const subscriptionItem = subscription.items?.data[0]
+      const periodStart = subscriptionItem?.current_period_start
+      const periodEnd = subscriptionItem?.current_period_end
+
       // Upsert subscription record
       const { error: subError } = await supabase
         .from('subscriptions')
@@ -90,11 +95,11 @@ export async function POST(request: NextRequest) {
           course_id: courseId,
           stripe_subscription_id: subscription.id,
           status: subscription.status,
-          current_period_start: subscription.current_period_start
-            ? new Date(subscription.current_period_start * 1000).toISOString()
+          current_period_start: periodStart
+            ? new Date(periodStart * 1000).toISOString()
             : null,
-          current_period_end: subscription.current_period_end
-            ? new Date(subscription.current_period_end * 1000).toISOString()
+          current_period_end: periodEnd
+            ? new Date(periodEnd * 1000).toISOString()
             : null,
           cancel_at_period_end: subscription.cancel_at_period_end,
           updated_at: new Date().toISOString(),
@@ -134,12 +139,11 @@ export async function POST(request: NextRequest) {
     case 'invoice.payment_succeeded': {
       const invoice = event.data.object as Stripe.Invoice
 
-      if (invoice.subscription) {
-        // Record recurring payment
-        const subscriptionId = typeof invoice.subscription === 'string'
-          ? invoice.subscription
-          : invoice.subscription.id
+      // Get subscription ID from parent (Stripe API v2024-12-18+)
+      const subscriptionId = invoice.parent?.subscription_details?.subscription
+        ?? (invoice as unknown as { subscription?: string }).subscription
 
+      if (subscriptionId) {
         // Get subscription from our database to find user/course
         const { data: sub } = await supabase
           .from('subscriptions')
@@ -148,11 +152,15 @@ export async function POST(request: NextRequest) {
           .single()
 
         if (sub) {
+          // Get payment intent from payments array (Stripe API v2024-12-18+)
+          const paymentIntentId = invoice.payments?.data[0]?.payment?.payment_intent
+            ?? (invoice as unknown as { payment_intent?: string }).payment_intent
+
           await supabase.from('payment_transactions').insert({
             user_id: sub.user_id,
             course_id: sub.course_id,
-            stripe_payment_intent_id: invoice.payment_intent as string,
-            amount_cents: invoice.amount_paid,
+            stripe_payment_intent_id: paymentIntentId ?? invoice.id,
+            amount_cents: invoice.amount_paid ?? 0,
             status: 'succeeded',
           })
         }
@@ -165,11 +173,11 @@ export async function POST(request: NextRequest) {
     case 'invoice.payment_failed': {
       const invoice = event.data.object as Stripe.Invoice
 
-      if (invoice.subscription) {
-        const subscriptionId = typeof invoice.subscription === 'string'
-          ? invoice.subscription
-          : invoice.subscription.id
+      // Get subscription ID from parent (Stripe API v2024-12-18+)
+      const subscriptionId = invoice.parent?.subscription_details?.subscription
+        ?? (invoice as unknown as { subscription?: string }).subscription
 
+      if (subscriptionId) {
         // Update subscription status
         await supabase
           .from('subscriptions')
