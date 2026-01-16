@@ -4,7 +4,11 @@
       "Bash(rm:*)",
       "Bash(npm install:*)",
       "Bash(mkdir:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nFix Stripe webhook types for SDK v20\n\nUpdate webhook handler to use new Stripe API property paths:\n- Access subscription period from items.data[0] \\(API v2022-11-15+\\)\n- Access invoice subscription via parent.subscription_details \\(API v2024-12-18+\\)\n- Access payment intent via payments array with fallbacks\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(curl:*)"
     ]
   }
 }
